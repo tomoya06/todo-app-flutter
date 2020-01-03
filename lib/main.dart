@@ -14,6 +14,14 @@ class MyApp extends StatelessWidget {
       home: Scaffold(
         appBar: AppBar(
           title: Text('To-Do List'),
+          actions: <Widget>[
+            IconButton(
+              icon: Icon(Icons.edit),
+              onPressed: () => {
+                // TODO: edit mode
+              },
+            )
+          ],
         ),
         body: TodoManager(),
       ),
@@ -33,9 +41,18 @@ class TodoManagerState extends State<TodoManager> {
     });
   }
 
-  _triggerDeleteTodoItem() {}
+  _triggerDeleteTodoItem(int index) {
+    setState(() {
+      this.todoList.removeAt(index);
+    });
+  }
 
-  _triggerModifyTodoItem(int index, TodoItem newTodoItem) {}
+  _triggerModifyTodoItem(int index, TodoItem newTodoItem) {
+    setState(() {
+      this.todoList.removeAt(index);
+      this.todoList.insert(index, newTodoItem);
+    });
+  }
 
   final todoList = <TodoItem>[];
 
@@ -46,6 +63,7 @@ class TodoManagerState extends State<TodoManager> {
         Expanded(
           child: TodoList(
             todoList: todoList,
+            triggerModify: this._triggerModifyTodoItem,
           ),
         ),
         Container(
@@ -65,34 +83,29 @@ class TodoList extends StatefulWidget {
 
   final todoList;
 
-//  final triggerModify;
+  final triggerModify;
 //  final triggerDelete;
 
   TodoList({
     @required this.todoList,
 //    @required this.triggerModify,
-//    @required this.triggerDelete,
+    @required this.triggerModify,
   });
 }
 
 class TodoListState extends State<TodoList> {
   Widget _buildList() {
-    final todoList = widget.todoList;
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemBuilder: (context, i) {
-        if (i.isOdd) return Divider();
-        final index = i ~/ 2;
-        if (index >= todoList.length) {
-          return null;
-        }
+    return ListView.separated(
+      itemBuilder: (BuildContext context, int index) {
         return TodoListItem(
           key: UniqueKey(),
-          todoItem: todoList[index],
-//          triggerDelete: widget.triggerDelete,
-//          triggerModify: widget.triggerModify,
+          todoItem: widget.todoList[index],
+          index: index,
+          triggerModify: widget.triggerModify,
         );
       },
+      separatorBuilder: (BuildContext context, int index) => Divider(),
+      itemCount: widget.todoList.length,
     );
   }
 
@@ -104,28 +117,65 @@ class TodoListState extends State<TodoList> {
 
 class TodoListItem extends StatefulWidget {
   final TodoItem todoItem;
-
-//  final triggerModify;
-//  final triggerDelete;
+  final int index;
+  final triggerModify;
 
   @override
   State<StatefulWidget> createState() => TodoListItemState();
 
+  _doTriggerModify(TodoItem item) {
+    this.triggerModify(this.index, item);
+  }
+
+  triggerDone(bool value) {
+    TodoItem newTodoItem = TodoItem(todoItem.content);
+    newTodoItem.isFinished = value;
+    _doTriggerModify(newTodoItem);
+  }
+
+  triggerEditContent(String value) {
+    TodoItem newTodoItem = TodoItem(value);
+    newTodoItem.isFinished = todoItem.isFinished;
+    _doTriggerModify(newTodoItem);
+  }
+
   TodoListItem({
     @required Key key,
     @required this.todoItem,
-//    @required this.triggerModify,
-//    @required this.triggerDelete,
+    @required this.index,
+    @required this.triggerModify,
   }) : super(key: key);
 }
 
 class TodoListItemState extends State<TodoListItem> {
+  bool _isEditing = false;
+  final _editController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
+    final todoItem = this.widget.todoItem;
     return ListTile(
-      title: Text(
-        this.widget.todoItem.content,
+      leading: Checkbox(
+        value: todoItem.isFinished,
+        onChanged: this.widget.triggerDone,
       ),
+      title: !_isEditing ? Text(
+        todoItem.content,
+      ) : TextField(
+        controller: _editController,
+      ),
+      trailing: !_isEditing ? null : IconButton(
+        icon: Icon(Icons.send),
+        onPressed: () {
+          this.widget.triggerEditContent(_editController.text);
+        },
+      ),
+      onLongPress: () {
+        _editController.text = todoItem.content;
+        setState(() {
+          this._isEditing = true;
+        });
+      },
     );
   }
 }
