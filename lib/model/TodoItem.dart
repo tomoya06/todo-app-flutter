@@ -1,9 +1,9 @@
 class TodoItem {
   String content;
-  bool isFinished;
+  bool isDone;
 
   TodoItem(String content) {
     this.content = content;
-    this.isFinished = false;
+    this.isDone = false;
   }
 }

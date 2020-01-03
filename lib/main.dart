@@ -4,75 +4,86 @@ import 'package:flutter/material.dart';
 
 import 'model/TodoItem.dart';
 
-void main() => runApp(MyApp());
+void main() => runApp(TodoApp());
 
-class MyApp extends StatelessWidget {
+class TodoAppInheritedWidget extends InheritedWidget {
+  final TodoAppState state;
+
+  TodoAppInheritedWidget({this.state, Widget child}) : super(child: child);
+
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: "To-Do List",
-      home: Scaffold(
-        appBar: AppBar(
-          title: Text('To-Do List'),
-          actions: <Widget>[
-            IconButton(
-              icon: Icon(Icons.edit),
-              onPressed: () => {
-                // TODO: edit mode
-              },
-            )
-          ],
-        ),
-        body: TodoManager(),
-      ),
-    );
+  bool updateShouldNotify(InheritedWidget oldWidget) {
+    return true;
   }
+
+  static TodoAppInheritedWidget of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<TodoAppInheritedWidget>();
 }
 
-class TodoManager extends StatefulWidget {
+class TodoApp extends StatefulWidget {
   @override
-  State<StatefulWidget> createState() => TodoManagerState();
+  State<StatefulWidget> createState() => TodoAppState();
 }
 
-class TodoManagerState extends State<TodoManager> {
-  _triggerAddNewTodoItem(TodoItem newTodoItem) {
+class TodoAppState extends State<TodoApp> {
+  final todoList = <TodoItem>[];
+  bool isEditMode = false;
+
+  editTodo(int index, TodoItem newTodoItem) {
+    setState(() {
+      this.todoList[index] = newTodoItem;
+    });
+  }
+
+  deleteTodo(int index) {
+    setState(() {
+      this.todoList.removeAt(index);
+    });
+  }
+
+  addNewTodo(TodoItem newTodoItem) {
     setState(() {
       this.todoList.add(newTodoItem);
     });
   }
 
-  _triggerDeleteTodoItem(int index) {
-    setState(() {
-      this.todoList.removeAt(index);
-    });
-  }
-
-  _triggerModifyTodoItem(int index, TodoItem newTodoItem) {
-    setState(() {
-      this.todoList.removeAt(index);
-      this.todoList.insert(index, newTodoItem);
-    });
-  }
-
-  final todoList = <TodoItem>[];
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        Expanded(
-          child: TodoList(
-            todoList: todoList,
-            triggerModify: this._triggerModifyTodoItem,
+    return TodoAppInheritedWidget(
+      state: this,
+      child: MaterialApp(
+        title: "To-Do List",
+        home: Scaffold(
+          appBar: AppBar(
+            title: Text('To-Do List'),
+            actions: <Widget>[
+              IconButton(
+                icon: !this.isEditMode
+                    ? Icon(Icons.delete_outline)
+                    : Icon(Icons.clear),
+                onPressed: () {
+                  setState(() {
+                    this.isEditMode = !this.isEditMode;
+                  });
+                },
+              ),
+            ],
+          ),
+          body: Column(
+            children: <Widget>[
+              Expanded(
+                child: TodoList(),
+              ),
+              !isEditMode
+                  ? Container(
+                      height: 64,
+                      child: NewTodoInput(),
+                    )
+                  : Container(),
+            ],
           ),
         ),
-        Container(
-          height: 64,
-          child: NewTodoInput(
-            triggerAddNew: this._triggerAddNewTodoItem,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -80,96 +91,105 @@ class TodoManagerState extends State<TodoManager> {
 class TodoList extends StatefulWidget {
   @override
   State<StatefulWidget> createState() => TodoListState();
-
-  final todoList;
-
-  final triggerModify;
-//  final triggerDelete;
-
-  TodoList({
-    @required this.todoList,
-//    @required this.triggerModify,
-    @required this.triggerModify,
-  });
 }
 
 class TodoListState extends State<TodoList> {
-  Widget _buildList() {
+  @override
+  Widget build(BuildContext context) {
+    final todoList = context
+        .dependOnInheritedWidgetOfExactType<TodoAppInheritedWidget>()
+        .state
+        .todoList;
+
     return ListView.separated(
       itemBuilder: (BuildContext context, int index) {
         return TodoListItem(
           key: UniqueKey(),
-          todoItem: widget.todoList[index],
           index: index,
-          triggerModify: widget.triggerModify,
         );
       },
       separatorBuilder: (BuildContext context, int index) => Divider(),
-      itemCount: widget.todoList.length,
+      itemCount: todoList.length,
     );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _buildList();
   }
 }
 
 class TodoListItem extends StatefulWidget {
-  final TodoItem todoItem;
   final int index;
-  final triggerModify;
+
+  const TodoListItem({Key key, this.index}) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => TodoListItemState();
-
-  _doTriggerModify(TodoItem item) {
-    this.triggerModify(this.index, item);
-  }
-
-  triggerDone(bool value) {
-    TodoItem newTodoItem = TodoItem(todoItem.content);
-    newTodoItem.isFinished = value;
-    _doTriggerModify(newTodoItem);
-  }
-
-  triggerEditContent(String value) {
-    TodoItem newTodoItem = TodoItem(value);
-    newTodoItem.isFinished = todoItem.isFinished;
-    _doTriggerModify(newTodoItem);
-  }
-
-  TodoListItem({
-    @required Key key,
-    @required this.todoItem,
-    @required this.index,
-    @required this.triggerModify,
-  }) : super(key: key);
 }
 
 class TodoListItemState extends State<TodoListItem> {
   bool _isEditing = false;
   final _editController = TextEditingController();
 
+  _triggerEditTodo(TodoAppState state, int index, TodoItem old) {
+    final newTodoItem = TodoItem(_editController.text);
+    newTodoItem.isDone = old.isDone;
+    state.editTodo(index, newTodoItem);
+  }
+
+  _triggerDone(TodoAppState state, int index, bool value, TodoItem old) {
+    final newTodoItem = TodoItem(old.content);
+    newTodoItem.isDone = value;
+    state.editTodo(index, newTodoItem);
+  }
+
+  _triggerDelete(TodoAppState state, int index) {
+    state.deleteTodo(index);
+  }
+
+  final _doneTextStyle = TextStyle(
+    decoration: TextDecoration.lineThrough,
+    color: Colors.black38,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final todoItem = this.widget.todoItem;
+    final todoManagerState = context
+        .dependOnInheritedWidgetOfExactType<TodoAppInheritedWidget>()
+        .state;
+    final todoList = todoManagerState.todoList;
+    final todoItem = todoList[widget.index];
+    final bool isEditMode = todoManagerState.isEditMode;
+
     return ListTile(
-      leading: Checkbox(
-        value: todoItem.isFinished,
-        onChanged: this.widget.triggerDone,
-      ),
-      title: !_isEditing ? Text(
-        todoItem.content,
-      ) : TextField(
-        controller: _editController,
-      ),
-      trailing: !_isEditing ? null : IconButton(
-        icon: Icon(Icons.send),
-        onPressed: () {
-          this.widget.triggerEditContent(_editController.text);
-        },
-      ),
+      leading: !isEditMode
+          ? Checkbox(
+              value: todoItem.isDone,
+              onChanged: (value) {
+                _triggerDone(todoManagerState, widget.index, value, todoItem);
+              },
+            )
+          : IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                color: Colors.redAccent,
+              ),
+              onPressed: () {
+                _triggerDelete(todoManagerState, widget.index);
+              },
+            ),
+      title: !_isEditing
+          ? Text(
+              todoItem.content,
+              style: !todoItem.isDone ? null : _doneTextStyle,
+            )
+          : TextField(
+              controller: _editController,
+            ),
+      trailing: !_isEditing
+          ? null
+          : IconButton(
+              icon: Icon(Icons.send),
+              onPressed: () {
+                _triggerEditTodo(todoManagerState, widget.index, todoItem);
+              },
+            ),
       onLongPress: () {
         _editController.text = todoItem.content;
         setState(() {
@@ -181,53 +201,59 @@ class TodoListItemState extends State<TodoListItem> {
 }
 
 class NewTodoInput extends StatefulWidget {
-  final triggerAddNew;
-
   @override
   State<StatefulWidget> createState() => NewTodoInputState();
-
-  NewTodoInput({
-    @required this.triggerAddNew,
-  });
 }
 
 class NewTodoInputState extends State<NewTodoInput> {
   final inputController = TextEditingController();
 
-  void _submitNewTodo() {
+  void _submitNewTodo(TodoAppState state) {
     log(inputController.text);
     if (inputController.text.isNotEmpty) {
       final newTodo = TodoItem(inputController.text);
-      widget.triggerAddNew(newTodo);
+      state.addNewTodo(newTodo);
       inputController.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final todoManagerState = context
+        .dependOnInheritedWidgetOfExactType<TodoAppInheritedWidget>()
+        .state;
+
     return Container(
       height: 64,
-      child: Row(
-        mainAxisSize: MainAxisSize.max,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Expanded(
-            flex: 1,
-            child: TextField(
-              controller: inputController,
-              decoration: const InputDecoration(
-                hintText: 'Create a new To-Do item',
+      child: Padding(
+        padding: const EdgeInsets.only(
+          left: 16.0,
+          right: 16.0,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              flex: 1,
+              child: TextField(
+                controller: inputController,
+                decoration: const InputDecoration(
+                  hintText: 'Create a new To-Do item',
+                ),
               ),
             ),
-          ),
-          Expanded(
-            flex: 0,
-            child: RaisedButton(
-              child: Text('Submit'),
-              onPressed: _submitNewTodo,
-            ),
-          )
-        ],
+            Expanded(
+              flex: 0,
+              child: IconButton(
+                icon: Icon(Icons.done),
+                onPressed: () {
+                  _submitNewTodo(todoManagerState);
+                },
+              ),
+            )
+          ],
+        ),
       ),
     );
   }
