@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'dart:developer';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
-import 'model/TodoItem.dart';
+import './config.dart' as GLOBAL_CONFIG;
+import './model/TodoItem.dart';
 
 void main() => runApp(TodoApp());
 
@@ -47,43 +51,111 @@ class TodoAppState extends State<TodoApp> {
     });
   }
 
+  Future<bool> uploadTodoListToGist(List<TodoList> list) async {
+    final response = await http
+        .patch('https://api.github.com/gists/fbc20c527bea8dbd27702add1d55f8c7');
+    if (response.statusCode == 200) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<List<TodoItem>> fetchTodoListFromGist() async {
+    final response = await http.get(
+        'https://api.github.com/gists/fbc20c527bea8dbd27702add1d55f8c7?client_id=${GLOBAL_CONFIG.CLIENT_ID}&client_secret=${GLOBAL_CONFIG.CLIENT_SECRET}');
+    if (response.statusCode == 200) {
+      final responseBody = response.body;
+      Map<String, dynamic> bodyJson = jsonDecode(responseBody);
+      final todoListFile = bodyJson['files']['todolist.json'];
+      final fileRawData = todoListFile['content'];
+      Map<String, dynamic> todoListFileJson = jsonDecode(fileRawData);
+
+      log(fileRawData);
+
+      if (todoListFileJson['updateTm'] == null ||
+          todoListFileJson['list'] == null ||
+          !(todoListFileJson['list'] is List)) {
+        return [];
+      }
+
+      final todoItemClassList = <TodoItem>[];
+      todoListFileJson['list'].forEach((item) {
+        todoItemClassList.add(new TodoItem.fromMap(item));
+      });
+      return todoItemClassList;
+    } else {
+      log("error");
+      return [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return TodoAppInheritedWidget(
-      state: this,
-      child: MaterialApp(
-        title: "To-Do List",
-        home: Scaffold(
-          appBar: AppBar(
-            title: Text('To-Do List'),
-            actions: <Widget>[
-              IconButton(
-                icon: !this.isEditMode
-                    ? Icon(Icons.delete_outline)
-                    : Icon(Icons.clear),
-                onPressed: () {
-                  setState(() {
-                    this.isEditMode = !this.isEditMode;
-                  });
-                },
-              ),
-            ],
-          ),
-          body: Column(
+    return FutureBuilder<List<TodoItem>>(
+      future: fetchTodoListFromGist(),
+      builder: (BuildContext context, AsyncSnapshot<List<TodoItem>> snapshot) {
+        Widget listBody;
+
+        // network related
+        if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.hasData) {
+            this.todoList.removeRange(0, this.todoList.length);
+            this.todoList.addAll(snapshot.data);
+          }
+          listBody = TodoList();
+        } else {
+          listBody = Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              Expanded(
-                child: TodoList(),
+              CircularProgressIndicator(),
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: 16.0,
+                ),
+                child: Text("Fetching Data from Github..."),
               ),
-              !isEditMode
-                  ? Container(
-                      height: 64,
-                      child: NewTodoInput(),
-                    )
-                  : Container(),
             ],
+          );
+        }
+
+        return TodoAppInheritedWidget(
+          state: this,
+          child: MaterialApp(
+            title: "To-Do List",
+            home: Scaffold(
+              appBar: AppBar(
+                title: Text('To-Do List'),
+                actions: <Widget>[
+                  IconButton(
+                    icon: !this.isEditMode
+                        ? Icon(Icons.delete_outline)
+                        : Icon(Icons.clear),
+                    onPressed: () {
+                      setState(() {
+                        this.isEditMode = !this.isEditMode;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              body: Column(
+                children: <Widget>[
+                  Expanded(
+                    child: listBody,
+                  ),
+                  !isEditMode
+                      ? Container(
+                          height: 64,
+                          child: NewTodoInput(),
+                        )
+                      : Container(),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -106,6 +178,7 @@ class TodoListState extends State<TodoList> {
         return TodoListItem(
           key: UniqueKey(),
           index: index,
+          item: todoList[index],
         );
       },
       separatorBuilder: (BuildContext context, int index) => Divider(),
@@ -116,8 +189,10 @@ class TodoListState extends State<TodoList> {
 
 class TodoListItem extends StatefulWidget {
   final int index;
+  final TodoItem item;
 
-  const TodoListItem({Key key, this.index}) : super(key: key);
+  const TodoListItem({Key key, @required this.index, @required this.item})
+      : super(key: key);
 
   @override
   State<StatefulWidget> createState() => TodoListItemState();
@@ -153,8 +228,7 @@ class TodoListItemState extends State<TodoListItem> {
     final todoManagerState = context
         .dependOnInheritedWidgetOfExactType<TodoAppInheritedWidget>()
         .state;
-    final todoList = todoManagerState.todoList;
-    final todoItem = todoList[widget.index];
+    final todoItem = widget.item;
     final bool isEditMode = todoManagerState.isEditMode;
 
     return ListTile(
